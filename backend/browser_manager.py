@@ -160,6 +160,7 @@ class BrowserManager:
         self._launching: set[str] = set()  # profile IDs currently being launched
         self.vnc = VNCManager()
         self._lock = asyncio.Lock()
+        self._auto_launch_task: asyncio.Task | None = None
 
     async def launch(self, profile: dict[str, Any]) -> RunningProfile:
         """Launch a browser instance for the given profile."""
@@ -280,10 +281,9 @@ class BrowserManager:
 
             return running
 
-        except Exception:
+        except BaseException:
             async with self._lock:
                 self._launching.discard(profile_id)
-            # Clean up VNC if browser launch failed
             await self.vnc.stop_vnc(display)
             raise
 
@@ -339,6 +339,28 @@ class BrowserManager:
     async def cleanup_stale(self):
         """Kill orphan processes from previous container runs."""
         await self.vnc.cleanup_stale()
+
+    async def auto_launch_all(self):
+        """Launch all profiles with auto_launch=True. Called on startup."""
+        from . import database as db
+
+        profiles = db.list_profiles()
+        auto_profiles = [p for p in profiles if p.get("auto_launch")]
+        if not auto_profiles:
+            logger.info("No profiles configured for auto-launch")
+            return
+
+        logger.info("Auto-launching %d profile(s)...", len(auto_profiles))
+        for profile in auto_profiles:
+            try:
+                await asyncio.wait_for(self.launch(profile), timeout=60)
+                logger.info("Auto-launched profile %s (%s)", profile["name"], profile["id"])
+            except Exception as exc:
+                logger.error(
+                    "Auto-launch failed for profile %s (%s): %s",
+                    profile["name"], profile["id"], exc,
+                )
+        logger.info("Auto-launch complete: %d running", len(self.running))
 
     def _build_fingerprint_args(self, profile: dict[str, Any]) -> list[str]:
         """Build extra Chromium args from profile fingerprint settings."""
