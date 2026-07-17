@@ -39,6 +39,46 @@ docker compose up --build
 
 Open [http://localhost:8080](http://localhost:8080) in your browser. Create a profile. Click Launch. Done.
 
+### Native Windows (without Docker)
+
+Windows can run the Manager directly. In this mode, each profile opens as a
+normal desktop window instead of being embedded in the dashboard through VNC.
+Profile management, persistence, proxies, fingerprint settings, and the CDP
+automation endpoint continue to work.
+
+Requirements:
+
+- Windows 10 or 11
+- Python 3.12
+- Node.js 20 or newer (used to build the dashboard on first run)
+
+From PowerShell in the repository directory:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\run-windows.ps1
+```
+
+The first run creates `.venv`, installs dependencies, downloads CloakBrowser,
+and builds the frontend. Later runs reuse those files. Use `-Install` after
+updating dependencies or frontend source:
+
+```powershell
+.\run-windows.ps1 -Install
+```
+
+Profiles and the SQLite database are stored under
+`%LOCALAPPDATA%\CloakBrowser Manager` by default. Override the location before
+starting if needed:
+
+```powershell
+$env:CLOAK_DATA_DIR = "D:\CloakBrowserData"
+.\run-windows.ps1
+```
+
+> Native Windows mode does not provide the in-dashboard noVNC viewer or its
+> clipboard relay. Interact with the CloakBrowser window directly. Docker mode
+> remains unchanged and continues to use the embedded viewer.
+
 > **Early alpha** — this project is under active development. Expect bugs. If you find one, please [open an issue](https://github.com/CloakHQ/CloakBrowser-Manager/issues).
 
 ## Why Not Just Use a VPN?
@@ -84,6 +124,10 @@ pip install -r requirements.txt
 uvicorn main:app --reload --port 8080
 ```
 
+On Windows, use `run-windows.ps1` for the complete application. For backend-only
+development, activate `.venv\Scripts\Activate.ps1`, set
+`$env:CLOAK_VIEW_MODE = "native"`, and run Uvicorn from the repository root.
+
 ### Frontend
 
 ```bash
@@ -100,7 +144,7 @@ docker compose up --build
 
 ## Requirements
 
-- Docker (20.10+)
+- Docker (20.10+) for the container/VNC mode, or Python 3.12 + Node.js 20+ for native Windows
 - ~2 GB disk (image + binary)
 - ~512 MB RAM per running profile
 

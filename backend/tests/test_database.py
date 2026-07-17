@@ -10,6 +10,12 @@ import pytest
 from backend import database as db
 
 
+def test_data_dir_environment_override(monkeypatch, tmp_path):
+    configured = tmp_path / "custom-data"
+    monkeypatch.setenv("CLOAK_DATA_DIR", str(configured))
+    assert db._get_data_dir() == configured
+
+
 # ── init_db ──────────────────────────────────────────────────────────────────
 
 

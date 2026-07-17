@@ -53,6 +53,7 @@ const fakeProfile = {
   status: "stopped" as const,
   vnc_ws_port: null,
   cdp_url: null,
+  view_mode: "vnc" as const,
 };
 
 beforeEach(() => {

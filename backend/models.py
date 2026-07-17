@@ -103,14 +103,16 @@ class ProfileResponse(BaseModel):
     status: str = "stopped"  # "running" | "stopped"
     vnc_ws_port: int | None = None
     cdp_url: str | None = None
+    view_mode: Literal["vnc", "native"] = "vnc"
 
 
 class LaunchResponse(BaseModel):
     profile_id: str
     status: str = "running"
-    vnc_ws_port: int
-    display: str
+    vnc_ws_port: int | None = None
+    display: str | None = None
     cdp_url: str | None = None
+    view_mode: Literal["vnc", "native"] = "vnc"
 
 
 class StatusResponse(BaseModel):
@@ -124,6 +126,7 @@ class ProfileStatusResponse(BaseModel):
     vnc_ws_port: int | None = None
     display: str | None = None
     cdp_url: str | None = None
+    view_mode: Literal["vnc", "native"] = "vnc"
 
 
 class ClipboardRequest(BaseModel):

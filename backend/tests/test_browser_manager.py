@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -90,15 +91,16 @@ def test_validate_no_port():
 
 # ── _build_fingerprint_args ──────────────────────────────────────────────────
 
-# Use the BrowserManager instance to call the method
-_mgr = BrowserManager()
+# Fingerprint construction is host-independent. Display-specific flags are
+# appended by launch() only when the manager uses VNC.
+_mgr = BrowserManager(view_mode="native")
 
 
 def test_build_args_always_includes_base():
     args = _mgr._build_fingerprint_args({})
     assert "--disable-infobars" in args
     assert "--test-type" in args
-    assert "--use-angle=swiftshader" in args
+    assert "--use-angle=swiftshader" not in args
 
 
 def test_build_args_seed():
@@ -138,8 +140,38 @@ def test_build_args_screen():
 
 def test_build_args_empty_profile():
     args = _mgr._build_fingerprint_args({})
-    # Only the 3 base args
-    assert len(args) == 3
+    # Only the 2 host-independent base args
+    assert len(args) == 2
+
+
+def test_view_mode_rejects_invalid_value():
+    with pytest.raises(ValueError, match="CLOAK_VIEW_MODE"):
+        BrowserManager(view_mode="invalid")
+
+
+@pytest.mark.asyncio
+async def test_native_launch_skips_vnc_and_display_env(tmp_path: Path, monkeypatch):
+    context = MagicMock()
+    context.add_init_script = AsyncMock()
+    context.pages = []
+    context.on = MagicMock()
+    launch = AsyncMock(return_value=context)
+    monkeypatch.setattr("backend.browser_manager.launch_persistent_context_async", launch)
+
+    mgr = BrowserManager(view_mode="native")
+    mgr.vnc.allocate = AsyncMock(side_effect=AssertionError("VNC must not be allocated"))
+    running = await mgr.launch({
+        "id": "native-profile",
+        "user_data_dir": str(tmp_path),
+        "launch_args": [],
+    })
+
+    assert running.display is None
+    assert running.ws_port is None
+    assert running.view_mode == "native"
+    assert "env" not in launch.await_args.kwargs
+    assert "--use-angle=swiftshader" not in launch.await_args.kwargs["args"]
+    assert mgr.get_status("native-profile")["view_mode"] == "native"
 
 
 # ── launch_args appended to extra_args ────────────────────────────────────────

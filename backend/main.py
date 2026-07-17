@@ -444,6 +444,7 @@ async def list_profiles():
         p["status"] = status["status"]
         p["vnc_ws_port"] = status["vnc_ws_port"]
         p["cdp_url"] = status["cdp_url"]
+        p["view_mode"] = status["view_mode"]
         p["tags"] = [TagResponse(**t) for t in p.get("tags", [])]
         result.append(ProfileResponse(**p))
     return result
@@ -462,6 +463,7 @@ async def create_profile(req: ProfileCreate):
     profile["status"] = status["status"]
     profile["vnc_ws_port"] = status["vnc_ws_port"]
     profile["cdp_url"] = status["cdp_url"]
+    profile["view_mode"] = status["view_mode"]
     profile["tags"] = [TagResponse(**t) for t in profile.get("tags", [])]
     return ProfileResponse(**profile)
 
@@ -475,6 +477,7 @@ async def get_profile(profile_id: str):
     profile["status"] = status["status"]
     profile["vnc_ws_port"] = status["vnc_ws_port"]
     profile["cdp_url"] = status["cdp_url"]
+    profile["view_mode"] = status["view_mode"]
     profile["tags"] = [TagResponse(**t) for t in profile.get("tags", [])]
     return ProfileResponse(**profile)
 
@@ -493,6 +496,7 @@ async def update_profile(profile_id: str, req: ProfileUpdate):
     profile["status"] = status["status"]
     profile["vnc_ws_port"] = status["vnc_ws_port"]
     profile["cdp_url"] = status["cdp_url"]
+    profile["view_mode"] = status["view_mode"]
     profile["tags"] = [TagResponse(**t) for t in profile.get("tags", [])]
     return ProfileResponse(**profile)
 
@@ -542,8 +546,9 @@ async def launch_profile(profile_id: str):
         profile_id=profile_id,
         status="running",
         vnc_ws_port=running.ws_port,
-        display=f":{running.display}",
+        display=f":{running.display}" if running.display is not None else None,
         cdp_url=f"/api/profiles/{profile_id}/cdp",
+        view_mode=running.view_mode,
     )
 
 
@@ -593,6 +598,11 @@ async def set_clipboard(profile_id: str, body: ClipboardRequest):
     running = browser_mgr.running.get(profile_id)
     if not running:
         raise HTTPException(status_code=404, detail="Profile not running")
+    if running.view_mode != "vnc" or running.display is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Clipboard relay is only available in VNC mode",
+        )
 
     import os
 
@@ -647,6 +657,9 @@ async def get_clipboard(profile_id: str):
     except Exception as exc:
         logger.debug("Playwright clipboard read failed: %s", exc)
 
+    if running.view_mode != "vnc" or running.display is None:
+        return {"text": ""}
+
     # Fallback: xclip for non-Chrome clipboard owners
     import os
 
@@ -683,6 +696,9 @@ async def vnc_proxy(websocket: WebSocket, profile_id: str):
     running = browser_mgr.running.get(profile_id)
     if not running:
         await websocket.close(code=4004, reason="Profile not running")
+        return
+    if running.view_mode != "vnc" or running.ws_port is None:
+        await websocket.close(code=4006, reason="VNC unavailable in native mode")
         return
 
     # Accept with client's requested subprotocol (if any) — RFC 6455 requires

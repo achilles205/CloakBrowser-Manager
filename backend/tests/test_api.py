@@ -106,6 +106,7 @@ def test_delete_profile_stops_running(app_client: TestClient):
     mock_running.display = 100
     mock_running.ws_port = 6100
     mock_running.cdp_port = 5100
+    mock_running.view_mode = "vnc"
     main.browser_mgr.running[pid] = mock_running
     main.browser_mgr.stop = AsyncMock()
 
@@ -270,6 +271,7 @@ def test_set_clipboard_success(app_client: TestClient):
     mock_running = MagicMock(spec=RunningProfile)
     mock_running.display = 100
     mock_running.cdp_port = 5100
+    mock_running.view_mode = "vnc"
     main.browser_mgr.running[pid] = mock_running
 
     # Mock asyncio.create_subprocess_exec to avoid actual xclip
@@ -305,6 +307,7 @@ def test_get_clipboard_from_page(app_client: TestClient):
     mock_running.display = 100
     mock_running.cdp_port = 5100
     mock_running.context = mock_context
+    mock_running.view_mode = "vnc"
     main.browser_mgr.running[pid] = mock_running
 
     resp = app_client.get(f"/api/profiles/{pid}/clipboard")
@@ -324,6 +327,7 @@ def test_profile_response_has_status_field(app_client: TestClient):
     for profile in resp.json():
         assert "status" in profile
         assert profile["status"] in ("running", "stopped")
+        assert profile["view_mode"] in ("vnc", "native")
 
 
 def test_profile_response_has_cdp_url_field(app_client: TestClient):
@@ -355,6 +359,7 @@ def test_running_profile_has_cdp_url(app_client: TestClient):
     mock_running.ws_port = 6100
     mock_running.cdp_port = 5100
     mock_running.profile_id = pid
+    mock_running.view_mode = "vnc"
     main.browser_mgr.running[pid] = mock_running
 
     resp = app_client.get(f"/api/profiles/{pid}")
@@ -386,6 +391,7 @@ def _mock_running_profile(pid: str) -> MagicMock:
     mock.ws_port = 6100
     mock.cdp_port = 5100
     mock.profile_id = pid
+    mock.view_mode = "vnc"
     main.browser_mgr.running[pid] = mock
     return mock
 

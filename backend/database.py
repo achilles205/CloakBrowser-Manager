@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import datetime
 import json
+import os
 import random
 import sqlite3
 import uuid
@@ -11,7 +12,25 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
-DATA_DIR = Path("/data")
+
+def _get_data_dir() -> Path:
+    """Return the persistent data directory for the current host.
+
+    Docker keeps the historical /data path. Native Windows installs use the
+    current user's local application data directory unless explicitly
+    overridden with CLOAK_DATA_DIR.
+    """
+    configured = os.environ.get("CLOAK_DATA_DIR")
+    if configured:
+        return Path(configured).expanduser()
+    if os.name == "nt":
+        local_app_data = os.environ.get("LOCALAPPDATA")
+        base = Path(local_app_data) if local_app_data else Path.home() / "AppData" / "Local"
+        return base / "CloakBrowser Manager"
+    return Path("/data")
+
+
+DATA_DIR = _get_data_dir()
 DB_PATH = DATA_DIR / "profiles.db"
 
 
