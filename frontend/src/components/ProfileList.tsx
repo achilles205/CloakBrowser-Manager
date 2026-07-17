@@ -1,5 +1,6 @@
-import { Plus, Search, Monitor } from "lucide-react";
-import { useState } from "react";
+import { Check, Copy, EllipsisVertical, Monitor, Plus, Search, X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { Profile } from "../lib/api";
 import { StatusIndicator } from "./StatusIndicator";
 
@@ -10,8 +11,181 @@ interface ProfileListProps {
   onNew: () => void;
 }
 
+interface MenuPosition {
+  left: number;
+  top: number;
+}
+
+type CopyStatus = "copied" | "error" | null;
+
+async function copyToClipboard(value: string) {
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(value);
+      return;
+    } catch {
+      // Fall back for non-secure HTTP origins and restricted browser contexts.
+    }
+  }
+
+  const textarea = document.createElement("textarea");
+  textarea.value = value;
+  textarea.setAttribute("readonly", "");
+  textarea.style.position = "fixed";
+  textarea.style.opacity = "0";
+  document.body.appendChild(textarea);
+  textarea.select();
+  const copied = document.execCommand("copy");
+  textarea.remove();
+
+  if (!copied) throw new Error("Clipboard copy failed");
+}
+
+interface ProfileMenuProps {
+  profile: Profile;
+  open: boolean;
+  copyStatus: CopyStatus;
+  onToggle: () => void;
+  onClose: () => void;
+  onCopy: () => void;
+}
+
+function ProfileMenu({
+  profile,
+  open,
+  copyStatus,
+  onToggle,
+  onClose,
+  onCopy,
+}: ProfileMenuProps) {
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [position, setPosition] = useState<MenuPosition>({ left: 0, top: 0 });
+
+  useEffect(() => {
+    if (!open) return;
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (!triggerRef.current?.contains(target) && !menuRef.current?.contains(target)) {
+        onClose();
+      }
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        onClose();
+        triggerRef.current?.focus();
+      }
+    };
+    const handleScroll = () => onClose();
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("scroll", handleScroll, true);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("scroll", handleScroll, true);
+    };
+  }, [open, onClose]);
+
+  const handleToggle = () => {
+    if (!open && triggerRef.current) {
+      const rect = triggerRef.current.getBoundingClientRect();
+      const menuWidth = 176;
+      const menuHeight = 42;
+      const gap = 6;
+      const top = rect.bottom + gap + menuHeight <= window.innerHeight
+        ? rect.bottom + gap
+        : rect.top - gap - menuHeight;
+      setPosition({
+        left: Math.max(8, rect.right - menuWidth),
+        top: Math.max(8, top),
+      });
+    }
+    onToggle();
+  };
+
+  return (
+    <>
+      <button
+        ref={triggerRef}
+        type="button"
+        onClick={handleToggle}
+        className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md text-gray-500 transition-colors hover:bg-surface-4 hover:text-gray-200 focus:outline-none focus:ring-2 focus:ring-accent/50"
+        aria-label={`Open menu for ${profile.name}`}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        title="Profile menu"
+      >
+        <EllipsisVertical className="h-4 w-4" />
+      </button>
+
+      {open && createPortal(
+        <div
+          ref={menuRef}
+          role="menu"
+          aria-label={`Actions for ${profile.name}`}
+          className="fixed z-50 w-44 rounded-md border border-border bg-surface-1 p-1 shadow-lg"
+          style={position}
+        >
+          <button
+            type="button"
+            role="menuitem"
+            onClick={onCopy}
+            className={`flex w-full items-center gap-2 rounded px-2.5 py-2 text-left text-xs transition-colors focus:outline-none focus:ring-2 focus:ring-accent/50 ${
+              copyStatus === "error"
+                ? "text-red-400 hover:bg-red-600/10"
+                : "text-gray-300 hover:bg-surface-3"
+            }`}
+          >
+            {copyStatus === "copied" ? (
+              <Check className="h-3.5 w-3.5 text-emerald-400" />
+            ) : copyStatus === "error" ? (
+              <X className="h-3.5 w-3.5" />
+            ) : (
+              <Copy className="h-3.5 w-3.5" />
+            )}
+            <span>
+              {copyStatus === "copied"
+                ? "Copied!"
+                : copyStatus === "error"
+                  ? "Copy failed"
+                  : "Copy Profile ID"}
+            </span>
+          </button>
+        </div>,
+        document.body,
+      )}
+    </>
+  );
+}
+
 export function ProfileList({ profiles, selectedId, onSelect, onNew }: ProfileListProps) {
   const [search, setSearch] = useState("");
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const [copyResult, setCopyResult] = useState<{ id: string; status: Exclude<CopyStatus, null> } | null>(null);
+  const feedbackTimer = useRef<number | null>(null);
+
+  useEffect(() => () => {
+    if (feedbackTimer.current !== null) window.clearTimeout(feedbackTimer.current);
+  }, []);
+
+  const closeMenu = () => setOpenMenuId(null);
+
+  const handleCopy = async (profile: Profile) => {
+    if (feedbackTimer.current !== null) window.clearTimeout(feedbackTimer.current);
+    try {
+      await copyToClipboard(profile.id);
+      setCopyResult({ id: profile.id, status: "copied" });
+      feedbackTimer.current = window.setTimeout(() => {
+        setOpenMenuId(null);
+        setCopyResult(null);
+      }, 1000);
+    } catch {
+      setCopyResult({ id: profile.id, status: "error" });
+    }
+  };
 
   const filtered = profiles.filter((p) =>
     p.name.toLowerCase().includes(search.toLowerCase()),
@@ -53,43 +227,65 @@ export function ProfileList({ profiles, selectedId, onSelect, onNew }: ProfileLi
           </div>
         )}
         {filtered.map((profile) => (
-          <button
+          <div
             key={profile.id}
-            onClick={() => onSelect(profile.id)}
-            className={`w-full text-left px-3 py-2.5 rounded-md mb-1 transition-colors ${
+            className={`relative mb-1 flex items-start rounded-md transition-colors ${
               selectedId === profile.id
                 ? "bg-surface-3 border border-border-hover"
                 : "hover:bg-surface-2 border border-transparent"
             }`}
           >
-            <div className="flex items-center gap-2">
-              <StatusIndicator status={profile.status} />
-              <span className="text-sm font-medium truncate">{profile.name}</span>
-            </div>
-            <div className="flex items-center gap-2 mt-1 ml-4">
-              <span className="text-xs text-gray-500 capitalize">{profile.platform}</span>
-              {profile.proxy && (
-                <>
-                  <span className="text-xs text-gray-600">·</span>
-                  <span className="text-xs text-gray-500">Proxy</span>
-                </>
-              )}
-            </div>
-            {profile.tags.length > 0 && (
-              <div className="flex gap-1 mt-1.5 ml-4 flex-wrap">
-                {profile.tags.map((t) => (
-                  <span
-                    key={t.tag}
-                    className="rounded-full border border-border bg-surface-4 px-1.5 py-0.5 text-[10px] text-gray-400"
-                    style={t.color ? { backgroundColor: `${t.color}18`, borderColor: `${t.color}55` } : undefined}
-                  >
-                    {t.tag}
-                  </span>
-                ))}
+            <button
+              type="button"
+              onClick={() => onSelect(profile.id)}
+              className="min-w-0 flex-1 px-3 py-2.5 text-left focus:outline-none focus:ring-2 focus:ring-inset focus:ring-accent/50"
+            >
+              <div className="flex items-center gap-2">
+                <StatusIndicator status={profile.status} />
+                <span className="truncate text-sm font-medium">{profile.name}</span>
               </div>
-            )}
-          </button>
+              <div className="ml-4 mt-1 flex items-center gap-2">
+                <span className="text-xs capitalize text-gray-500">{profile.platform}</span>
+                {profile.proxy && (
+                  <>
+                    <span className="text-xs text-gray-600">·</span>
+                    <span className="text-xs text-gray-500">Proxy</span>
+                  </>
+                )}
+              </div>
+              {profile.tags.length > 0 && (
+                <div className="ml-4 mt-1.5 flex flex-wrap gap-1">
+                  {profile.tags.map((t) => (
+                    <span
+                      key={t.tag}
+                      className="rounded-full border border-border bg-surface-4 px-1.5 py-0.5 text-[10px] text-gray-400"
+                      style={t.color ? { backgroundColor: `${t.color}18`, borderColor: `${t.color}55` } : undefined}
+                    >
+                      {t.tag}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </button>
+            <div className="mr-1 mt-1.5">
+              <ProfileMenu
+                profile={profile}
+                open={openMenuId === profile.id}
+                copyStatus={copyResult?.id === profile.id ? copyResult.status : null}
+                onToggle={() => {
+                  setCopyResult(null);
+                  setOpenMenuId((current) => current === profile.id ? null : profile.id);
+                }}
+                onClose={closeMenu}
+                onCopy={() => void handleCopy(profile)}
+              />
+            </div>
+          </div>
         ))}
+      </div>
+
+      <div className="sr-only" role="status" aria-live="polite">
+        {copyResult?.status === "copied" ? "Profile ID copied to clipboard" : ""}
       </div>
 
       {/* New profile button */}
