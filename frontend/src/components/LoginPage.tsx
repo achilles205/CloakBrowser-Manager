@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { Lock } from "lucide-react";
 import { api } from "../lib/api";
+import { ThemeToggle } from "./Theme";
 
 interface LoginPageProps {
   onSuccess: () => void;
@@ -27,6 +28,7 @@ export function LoginPage({ onSuccess }: LoginPageProps) {
 
   return (
     <div className="h-screen flex items-center justify-center bg-surface-0">
+      <ThemeToggle className="fixed right-4 top-4" />
       <div className="w-80">
         <div className="flex flex-col items-center mb-6">
           <div className="h-10 w-10 rounded-lg bg-accent/10 flex items-center justify-center mb-3">

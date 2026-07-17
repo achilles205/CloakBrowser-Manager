@@ -9,6 +9,7 @@ import { NativeProfileStatus } from "./components/NativeProfileStatus";
 import { LaunchButton } from "./components/LaunchButton";
 import { StatusIndicator } from "./components/StatusIndicator";
 import { LoginPage } from "./components/LoginPage";
+import { ThemeToggle } from "./components/Theme";
 
 type AuthState = "checking" | "required" | "ok" | "error";
 type View = "empty" | "create" | "edit" | "view";
@@ -40,6 +41,7 @@ export default function App() {
   if (authState === "checking") {
     return (
       <div className="h-screen flex items-center justify-center">
+        <ThemeToggle className="fixed right-4 top-4" />
         <div className="text-gray-500 text-sm">Loading...</div>
       </div>
     );
@@ -48,6 +50,7 @@ export default function App() {
   if (authState === "error") {
     return (
       <div className="h-screen flex items-center justify-center bg-surface-0">
+        <ThemeToggle className="fixed right-4 top-4" />
         <div className="text-center">
           <p className="text-red-400 text-sm mb-2">Unable to reach the server</p>
           <button
@@ -194,6 +197,7 @@ function AppContent({ authRequired, onLogout }: AppContentProps) {
                 onStop={handleStop}
               />
             )}
+            <ThemeToggle />
             {authRequired && (
               <button
                 onClick={onLogout}

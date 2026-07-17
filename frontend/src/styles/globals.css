@@ -3,6 +3,66 @@
 @tailwind utilities;
 
 @layer base {
+  :root {
+    color-scheme: light;
+    --surface-0: 248 250 252;
+    --surface-1: 255 255 255;
+    --surface-2: 248 250 252;
+    --surface-3: 241 245 249;
+    --surface-4: 226 232 240;
+    --border-color: 226 232 240;
+    --border-hover: 203 213 225;
+    --accent: 79 70 229;
+    --accent-hover: 67 56 202;
+    --gray-50: 2 6 23;
+    --gray-100: 15 23 42;
+    --gray-200: 30 41 59;
+    --gray-300: 51 65 85;
+    --gray-400: 71 85 105;
+    --gray-500: 100 116 139;
+    --gray-600: 148 163 184;
+    --gray-700: 203 213 225;
+    --gray-800: 226 232 240;
+    --gray-900: 241 245 249;
+    --gray-950: 248 250 252;
+    --danger-text: 185 28 28;
+    --danger-fill: 220 38 38;
+    --success: 5 150 105;
+    --warning: 217 119 6;
+    --scrollbar: 203 213 225;
+    --scrollbar-hover: 148 163 184;
+  }
+
+  :root.dark {
+    color-scheme: dark;
+    --surface-0: 10 10 10;
+    --surface-1: 17 17 17;
+    --surface-2: 26 26 26;
+    --surface-3: 34 34 34;
+    --surface-4: 42 42 42;
+    --border-color: 42 42 42;
+    --border-hover: 58 58 58;
+    --accent: 99 102 241;
+    --accent-hover: 129 140 248;
+    --gray-50: 249 250 251;
+    --gray-100: 243 244 246;
+    --gray-200: 229 231 235;
+    --gray-300: 209 213 219;
+    --gray-400: 156 163 175;
+    --gray-500: 107 114 128;
+    --gray-600: 75 85 99;
+    --gray-700: 55 65 81;
+    --gray-800: 31 41 55;
+    --gray-900: 17 24 39;
+    --gray-950: 3 7 18;
+    --danger-text: 248 113 113;
+    --danger-fill: 220 38 38;
+    --success: 52 211 153;
+    --warning: 250 204 21;
+    --scrollbar: 51 51 51;
+    --scrollbar-hover: 68 68 68;
+  }
+
   * {
     box-sizing: border-box;
   }
@@ -13,6 +73,7 @@
       system-ui, sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    transition: background-color 150ms ease, color 150ms ease;
   }
 
   /* Scrollbar styling */
@@ -23,11 +84,15 @@
     background: transparent;
   }
   ::-webkit-scrollbar-thumb {
-    background: #333;
+    background: rgb(var(--scrollbar));
     border-radius: 3px;
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: #444;
+    background: rgb(var(--scrollbar-hover));
+  }
+
+  input[type="checkbox"] {
+    accent-color: rgb(var(--accent));
   }
 
   /* Hide number input spinners */

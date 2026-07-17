@@ -80,8 +80,8 @@ export function ProfileList({ profiles, selectedId, onSelect, onNew }: ProfileLi
                 {profile.tags.map((t) => (
                   <span
                     key={t.tag}
-                    className="text-[10px] px-1.5 py-0.5 rounded-full bg-surface-4 text-gray-400"
-                    style={t.color ? { backgroundColor: `${t.color}20`, color: t.color } : undefined}
+                    className="rounded-full border border-border bg-surface-4 px-1.5 py-0.5 text-[10px] text-gray-400"
+                    style={t.color ? { backgroundColor: `${t.color}18`, borderColor: `${t.color}55` } : undefined}
                   >
                     {t.tag}
                   </span>

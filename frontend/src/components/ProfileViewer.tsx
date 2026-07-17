@@ -286,7 +286,7 @@ export function ProfileViewer({ profileId, cdpUrl, clipboardSync: initialClipboa
       {/* VNC canvas container */}
       <div
         ref={containerRef}
-        className="flex-1 bg-black overflow-hidden"
+        className="flex-1 bg-surface-2 overflow-hidden"
         style={{ minHeight: 0 }}
       />
     </div>

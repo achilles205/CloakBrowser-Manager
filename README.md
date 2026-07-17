@@ -103,6 +103,7 @@ Each CloakBrowser profile generates a completely different device identity. To t
 - **In-browser viewing** — interact with launched browsers via noVNC, directly in the web GUI
 - **Playwright/Puppeteer API** — connect to any running profile programmatically via CDP, while still watching it live in the browser
 - **Optional authentication** — protect the web UI and API with a single token, or run wide open locally
+- **Light and dark themes** — light by default, with your preference saved in the dashboard
 - **Powered by CloakBrowser** — 32 source-level C++ patches, passes Cloudflare Turnstile, 0.9 reCAPTCHA v3 score
 
 ## Stack

@@ -487,8 +487,8 @@ export function ProfileForm({ profile, onSave, onDelete, onCancel }: ProfileForm
               {(form.tags ?? []).map((t) => (
                 <span
                   key={t.tag}
-                  className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-full bg-surface-3 text-gray-300"
-                  style={t.color ? { backgroundColor: `${t.color}20`, color: t.color } : undefined}
+                  className="inline-flex items-center gap-1 rounded-full border border-border bg-surface-3 px-2 py-1 text-xs text-gray-300"
+                  style={t.color ? { backgroundColor: `${t.color}18`, borderColor: `${t.color}55` } : undefined}
                 >
                   {t.tag}
                   <button
@@ -509,11 +509,11 @@ export function ProfileForm({ profile, onSave, onDelete, onCancel }: ProfileForm
                   key={c}
                   type="button"
                   onClick={() => setTagColor(c)}
-                  className="w-4 h-4 rounded-full border-2 transition-transform"
+                  className={`h-4 w-4 rounded-full border-2 border-transparent transition-transform ${
+                    tagColor === c ? "scale-110 ring-2 ring-accent ring-offset-2 ring-offset-surface-0" : ""
+                  }`}
                   style={{
                     backgroundColor: c,
-                    borderColor: tagColor === c ? "#fff" : "transparent",
-                    transform: tagColor === c ? "scale(1.2)" : undefined,
                   }}
                 />
               ))}
