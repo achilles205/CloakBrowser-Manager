@@ -1,7 +1,8 @@
 import { useState, useCallback, useEffect } from "react";
 import { Lock, PanelLeftClose, PanelLeft } from "lucide-react";
 import { useProfiles } from "./hooks/useProfiles";
-import { api, setOnUnauthorized, type ProfileCreateData } from "./lib/api";
+import { api, setOnUnauthorized, type Profile, type ProfileCreateData } from "./lib/api";
+import { profileToCloneData } from "./lib/profileClone";
 import { ProfileList } from "./components/ProfileList";
 import { ProfileForm } from "./components/ProfileForm";
 import { ProfileViewer } from "./components/ProfileViewer";
@@ -119,6 +120,13 @@ function AppContent({ authRequired, onLogout }: AppContentProps) {
     }
   }, [create]);
 
+  const handleClone = useCallback(async (source: Profile) => {
+    const clone = await create(profileToCloneData(source, profiles.map((profile) => profile.name)));
+    if (!clone) throw new Error("Failed to clone profile");
+    setSelectedId(clone.id);
+    setView("edit");
+  }, [create, profiles]);
+
   const handleUpdate = useCallback(async (data: ProfileCreateData) => {
     if (!selectedId) return;
     await update(selectedId, data);
@@ -165,6 +173,7 @@ function AppContent({ authRequired, onLogout }: AppContentProps) {
             selectedId={selectedId}
             onSelect={handleSelect}
             onNew={handleNew}
+            onClone={handleClone}
           />
         </div>
       )}

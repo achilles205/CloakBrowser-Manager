@@ -1,4 +1,14 @@
-import { Check, Copy, EllipsisVertical, Monitor, Plus, Search, X } from "lucide-react";
+import {
+  Check,
+  Copy,
+  CopyPlus,
+  EllipsisVertical,
+  LoaderCircle,
+  Monitor,
+  Plus,
+  Search,
+  X,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { Profile } from "../lib/api";
@@ -9,6 +19,7 @@ interface ProfileListProps {
   selectedId: string | null;
   onSelect: (id: string) => void;
   onNew: () => void;
+  onClone: (profile: Profile) => Promise<void>;
 }
 
 interface MenuPosition {
@@ -45,18 +56,24 @@ interface ProfileMenuProps {
   profile: Profile;
   open: boolean;
   copyStatus: CopyStatus;
+  cloning: boolean;
+  cloneFailed: boolean;
   onToggle: () => void;
   onClose: () => void;
   onCopy: () => void;
+  onClone: () => void;
 }
 
 function ProfileMenu({
   profile,
   open,
   copyStatus,
+  cloning,
+  cloneFailed,
   onToggle,
   onClose,
   onCopy,
+  onClone,
 }: ProfileMenuProps) {
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -93,7 +110,7 @@ function ProfileMenu({
     if (!open && triggerRef.current) {
       const rect = triggerRef.current.getBoundingClientRect();
       const menuWidth = 176;
-      const menuHeight = 42;
+      const menuHeight = 78;
       const gap = 6;
       const top = rect.bottom + gap + menuHeight <= window.innerHeight
         ? rect.bottom + gap
@@ -132,6 +149,26 @@ function ProfileMenu({
           <button
             type="button"
             role="menuitem"
+            onClick={onClone}
+            disabled={cloning}
+            className={`flex w-full items-center gap-2 rounded px-2.5 py-2 text-left text-xs transition-colors focus:outline-none focus:ring-2 focus:ring-accent/50 disabled:cursor-wait ${
+              cloneFailed
+                ? "text-red-400 hover:bg-red-600/10"
+                : "text-gray-300 hover:bg-surface-3"
+            }`}
+          >
+            {cloning ? (
+              <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+            ) : cloneFailed ? (
+              <X className="h-3.5 w-3.5" />
+            ) : (
+              <CopyPlus className="h-3.5 w-3.5" />
+            )}
+            <span>{cloning ? "Cloning..." : cloneFailed ? "Clone failed" : "Clone Profile"}</span>
+          </button>
+          <button
+            type="button"
+            role="menuitem"
             onClick={onCopy}
             className={`flex w-full items-center gap-2 rounded px-2.5 py-2 text-left text-xs transition-colors focus:outline-none focus:ring-2 focus:ring-accent/50 ${
               copyStatus === "error"
@@ -161,10 +198,12 @@ function ProfileMenu({
   );
 }
 
-export function ProfileList({ profiles, selectedId, onSelect, onNew }: ProfileListProps) {
+export function ProfileList({ profiles, selectedId, onSelect, onNew, onClone }: ProfileListProps) {
   const [search, setSearch] = useState("");
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [copyResult, setCopyResult] = useState<{ id: string; status: Exclude<CopyStatus, null> } | null>(null);
+  const [cloningId, setCloningId] = useState<string | null>(null);
+  const [cloneFailedId, setCloneFailedId] = useState<string | null>(null);
   const feedbackTimer = useRef<number | null>(null);
 
   useEffect(() => () => {
@@ -184,6 +223,19 @@ export function ProfileList({ profiles, selectedId, onSelect, onNew }: ProfileLi
       }, 1000);
     } catch {
       setCopyResult({ id: profile.id, status: "error" });
+    }
+  };
+
+  const handleClone = async (profile: Profile) => {
+    setCloningId(profile.id);
+    setCloneFailedId(null);
+    try {
+      await onClone(profile);
+      setOpenMenuId(null);
+    } catch {
+      setCloneFailedId(profile.id);
+    } finally {
+      setCloningId(null);
     }
   };
 
@@ -272,12 +324,16 @@ export function ProfileList({ profiles, selectedId, onSelect, onNew }: ProfileLi
                 profile={profile}
                 open={openMenuId === profile.id}
                 copyStatus={copyResult?.id === profile.id ? copyResult.status : null}
+                cloning={cloningId === profile.id}
+                cloneFailed={cloneFailedId === profile.id}
                 onToggle={() => {
                   setCopyResult(null);
+                  setCloneFailedId(null);
                   setOpenMenuId((current) => current === profile.id ? null : profile.id);
                 }}
                 onClose={closeMenu}
                 onCopy={() => void handleCopy(profile)}
+                onClone={() => void handleClone(profile)}
               />
             </div>
           </div>

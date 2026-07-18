@@ -56,6 +56,7 @@ describe("ProfileList", () => {
         selectedId={null}
         onSelect={onSelect}
         onNew={vi.fn()}
+        onClone={vi.fn()}
       />,
     );
 
@@ -75,6 +76,7 @@ describe("ProfileList", () => {
         selectedId={null}
         onSelect={vi.fn()}
         onNew={vi.fn()}
+        onClone={vi.fn()}
       />,
     );
 
@@ -85,5 +87,26 @@ describe("ProfileList", () => {
     fireEvent.keyDown(document, { key: "Escape" });
     expect(screen.queryByRole("menu")).toBeNull();
     expect(document.activeElement).toBe(trigger);
+  });
+
+  it("clones a profile from the menu without selecting the source row", async () => {
+    const onClone = vi.fn().mockResolvedValue(undefined);
+    const onSelect = vi.fn();
+    render(
+      <ProfileList
+        profiles={[profile]}
+        selectedId={null}
+        onSelect={onSelect}
+        onNew={vi.fn()}
+        onClone={onClone}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Open menu for Windows Profile" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Clone Profile" }));
+
+    await waitFor(() => expect(onClone).toHaveBeenCalledWith(profile));
+    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+    expect(onSelect).not.toHaveBeenCalled();
   });
 });

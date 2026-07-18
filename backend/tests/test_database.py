@@ -58,6 +58,17 @@ def test_create_profile_with_seed(tmp_db: Path):
     assert p["fingerprint_seed"] == 42
 
 
+def test_create_same_configuration_gets_fresh_identity_and_data_dir(tmp_db: Path):
+    source = db.create_profile("Source", fingerprint_seed=42, proxy="http://host:8080")
+    clone = db.create_profile("Source (Clone)", fingerprint_seed=42, proxy="http://host:8080")
+
+    assert clone["fingerprint_seed"] == source["fingerprint_seed"]
+    assert clone["proxy"] == source["proxy"]
+    assert clone["id"] != source["id"]
+    assert clone["user_data_dir"] != source["user_data_dir"]
+    assert not Path(clone["user_data_dir"]).exists()
+
+
 def test_create_profile_all_fields(tmp_db: Path):
     p = db.create_profile(
         "Full",
