@@ -174,6 +174,32 @@ async def test_native_launch_skips_vnc_and_display_env(tmp_path: Path, monkeypat
     assert mgr.get_status("native-profile")["view_mode"] == "native"
 
 
+@pytest.mark.parametrize("scheme", ["http", "https", "socks5"])
+@pytest.mark.asyncio
+async def test_native_launch_passes_authenticated_proxy(
+    scheme: str,
+    tmp_path: Path,
+    monkeypatch,
+):
+    context = MagicMock()
+    context.add_init_script = AsyncMock()
+    context.pages = []
+    context.on = MagicMock()
+    launch = AsyncMock(return_value=context)
+    monkeypatch.setattr("backend.browser_manager.launch_persistent_context_async", launch)
+
+    proxy = f"{scheme}://proxy-user:proxy-pass@192.0.2.10:6238"
+    mgr = BrowserManager(view_mode="native")
+    await mgr.launch({
+        "id": f"{scheme}-proxy-profile",
+        "user_data_dir": str(tmp_path / scheme),
+        "proxy": proxy,
+        "launch_args": [],
+    })
+
+    assert launch.await_args.kwargs["proxy"] == proxy
+
+
 # ── launch_args appended to extra_args ────────────────────────────────────────
 
 

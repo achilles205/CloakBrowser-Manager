@@ -1,6 +1,12 @@
 import { Save, Trash2, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { Profile, ProfileCreateData } from "../lib/api";
+import {
+  buildProxyUrl,
+  PROXY_SCHEMES,
+  proxyToFormValue,
+  type ProxyScheme,
+} from "../lib/proxy";
 
 interface ProfileFormProps {
   profile: Profile | null; // null = create mode
@@ -75,8 +81,17 @@ export function ProfileForm({ profile, onSave, onDelete, onCancel }: ProfileForm
   const [tagInput, setTagInput] = useState("");
   const [tagColor, setTagColor] = useState<string | null>("#6366f1");
   const [launchArgInput, setLaunchArgInput] = useState("");
+  const initialProxy = proxyToFormValue(profile?.proxy);
+  const [proxyScheme, setProxyScheme] = useState<ProxyScheme>(initialProxy.scheme);
+  const [proxyAddress, setProxyAddress] = useState(initialProxy.address);
+  const [proxyError, setProxyError] = useState<string | null>(null);
 
   useEffect(() => {
+    const parsedProxy = proxyToFormValue(profile?.proxy);
+    setProxyScheme(parsedProxy.scheme);
+    setProxyAddress(parsedProxy.address);
+    setProxyError(null);
+
     if (profile) {
       setForm({
         name: profile.name,
@@ -112,9 +127,19 @@ export function ProfileForm({ profile, onSave, onDelete, onCancel }: ProfileForm
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.name.trim()) return;
+
+    let normalizedProxy: string | null;
+    try {
+      normalizedProxy = buildProxyUrl(proxyScheme, proxyAddress);
+      setProxyError(null);
+    } catch (error) {
+      setProxyError(error instanceof Error ? error.message : "Invalid proxy configuration.");
+      return;
+    }
+
     setSaving(true);
     try {
-      await onSave(form);
+      await onSave({ ...form, proxy: normalizedProxy });
     } finally {
       setSaving(false);
     }
@@ -279,13 +304,44 @@ export function ProfileForm({ profile, onSave, onDelete, onCancel }: ProfileForm
           <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Network</h3>
           <div className="space-y-3">
             <div>
-              <label className="label">Proxy</label>
-              <input
-                className="input"
-                value={form.proxy ?? ""}
-                onChange={(e) => set("proxy", e.target.value || null)}
-                placeholder="http://user:pass@host:port"
-              />
+              <div className="grid grid-cols-[8rem_minmax(0,1fr)] gap-2">
+                <div>
+                  <label htmlFor="proxy-scheme" className="label">Proxy Type</label>
+                  <select
+                    id="proxy-scheme"
+                    className="input uppercase"
+                    value={proxyScheme}
+                    onChange={(e) => {
+                      setProxyScheme(e.target.value as ProxyScheme);
+                      setProxyError(null);
+                    }}
+                  >
+                    {PROXY_SCHEMES.map((scheme) => (
+                      <option key={scheme} value={scheme}>{scheme}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label htmlFor="proxy-address" className="label">Proxy Address</label>
+                  <input
+                    id="proxy-address"
+                    className={`input ${proxyError ? "border-red-600 focus:border-red-600 focus:ring-red-600/30" : ""}`}
+                    value={proxyAddress}
+                    onChange={(e) => {
+                      setProxyAddress(e.target.value);
+                      setProxyError(null);
+                    }}
+                    placeholder="proxy.example:6238:username:password"
+                    aria-invalid={proxyError ? "true" : "false"}
+                    aria-describedby="proxy-help"
+                    autoComplete="off"
+                    spellCheck={false}
+                  />
+                </div>
+              </div>
+              <p id="proxy-help" className={`mt-1.5 text-xs ${proxyError ? "text-red-400" : "text-gray-500"}`}>
+                {proxyError ?? "Paste host:port or host:port:user:pass"}
+              </p>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
