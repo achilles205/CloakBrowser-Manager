@@ -167,7 +167,7 @@ function AppContent({ authRequired, onLogout }: AppContentProps) {
     <div className="h-screen flex">
       {/* Sidebar */}
       {sidebarOpen && (
-        <div className="w-64 border-r border-border bg-surface-1 flex-shrink-0">
+        <div className="w-[32rem] max-w-[50vw] border-r border-border bg-surface-1 flex-shrink-0">
           <ProfileList
             profiles={profiles}
             selectedId={selectedId}

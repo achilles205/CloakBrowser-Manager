@@ -48,6 +48,39 @@ beforeEach(() => {
 });
 
 describe("ProfileList", () => {
+  it("renders stable No., Title, and credential-safe Proxy columns", () => {
+    const proxyProfile: Profile = {
+      ...profile,
+      id: "profile-proxy-456",
+      name: "Proxy Profile",
+      proxy: "socks5://proxy-user:proxy-pass@82.26.218.143:6451",
+    };
+
+    render(
+      <ProfileList
+        profiles={[proxyProfile, profile]}
+        selectedId={null}
+        onSelect={vi.fn()}
+        onNew={vi.fn()}
+        onClone={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("columnheader", { name: "No." })).toBeTruthy();
+    expect(screen.getByRole("columnheader", { name: "Title" })).toBeTruthy();
+    expect(screen.getByRole("columnheader", { name: "Proxy" })).toBeTruthy();
+    expect(screen.getByText("82.26.218.143:6451")).toBeTruthy();
+    expect(screen.getByText("SOCKS5")).toBeTruthy();
+    expect(screen.getByText("Direct")).toBeTruthy();
+    expect(screen.queryByText(/proxy-user|proxy-pass/)).toBeNull();
+
+    const rows = screen.getAllByRole("row");
+    expect(rows[1]?.textContent).toContain("2");
+    expect(rows[1]?.textContent).toContain("Proxy Profile");
+    expect(rows[2]?.textContent).toContain("1");
+    expect(rows[2]?.textContent).toContain("Windows Profile");
+  });
+
   it("copies a profile ID from its three-dot menu without selecting the profile", async () => {
     const onSelect = vi.fn();
     render(

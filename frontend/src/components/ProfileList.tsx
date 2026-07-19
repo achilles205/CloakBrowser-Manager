@@ -29,6 +29,40 @@ interface MenuPosition {
 
 type CopyStatus = "copied" | "error" | null;
 
+interface ProxySummary {
+  endpoint: string;
+  scheme: string | null;
+}
+
+function getProxySummary(proxy: string | null): ProxySummary {
+  const trimmed = proxy?.trim();
+  if (!trimmed) return { endpoint: "Direct", scheme: null };
+
+  const schemeMatch = trimmed.match(/^([a-z0-9]+):\/\/(.*)$/i);
+  const scheme = schemeMatch?.[1]?.toUpperCase() ?? "HTTP";
+  const authority = schemeMatch?.[2] ?? trimmed;
+  const atIndex = authority.lastIndexOf("@");
+
+  if (atIndex >= 0) {
+    return {
+      endpoint: authority.slice(atIndex + 1),
+      scheme,
+    };
+  }
+
+  // Keep credentials out of the table if a legacy compact
+  // host:port:user:pass value is returned by an older backend.
+  const parts = authority.split(":");
+  if (parts.length >= 4 && /^\d+$/.test(parts[1] ?? "")) {
+    return {
+      endpoint: `${parts[0]}:${parts[1]}`,
+      scheme,
+    };
+  }
+
+  return { endpoint: authority, scheme };
+}
+
 async function copyToClipboard(value: string) {
   if (navigator.clipboard?.writeText) {
     try {
@@ -239,9 +273,14 @@ export function ProfileList({ profiles, selectedId, onSelect, onNew, onClone }: 
     }
   };
 
-  const filtered = profiles.filter((p) =>
-    p.name.toLowerCase().includes(search.toLowerCase()),
-  );
+  const filtered = profiles
+    .map((profile, index) => ({
+      profile,
+      number: profiles.length - index,
+    }))
+    .filter(({ profile }) =>
+      profile.name.toLowerCase().includes(search.toLowerCase()),
+    );
 
   const runningCount = profiles.filter((p) => p.status === "running").length;
 
@@ -272,72 +311,118 @@ export function ProfileList({ profiles, selectedId, onSelect, onNew, onClone }: 
       </div>
 
       {/* Profile list */}
-      <div className="flex-1 overflow-y-auto p-2">
+      <div className="flex-1 overflow-y-auto" role="table" aria-label="Browser profiles">
+        <div
+          role="row"
+          className="sticky top-0 z-10 grid grid-cols-[2.75rem_minmax(0,1fr)_minmax(8.75rem,0.9fr)_2.25rem] items-center border-b border-border bg-surface-1 px-2 py-2 text-[11px] font-semibold uppercase tracking-wide text-gray-500"
+        >
+          <span role="columnheader" className="text-center">
+            No.
+          </span>
+          <span role="columnheader" className="px-2">
+            Title
+          </span>
+          <span role="columnheader" className="px-2">
+            Proxy
+          </span>
+          <span role="columnheader" className="sr-only">
+            Actions
+          </span>
+        </div>
+
         {filtered.length === 0 && (
           <div className="text-center text-gray-500 text-xs py-8">
             {profiles.length === 0 ? "No profiles yet" : "No matches"}
           </div>
         )}
-        {filtered.map((profile) => (
-          <div
-            key={profile.id}
-            className={`relative mb-1 flex items-start rounded-md transition-colors ${
-              selectedId === profile.id
-                ? "bg-surface-3 border border-border-hover"
-                : "hover:bg-surface-2 border border-transparent"
-            }`}
-          >
-            <button
-              type="button"
-              onClick={() => onSelect(profile.id)}
-              className="min-w-0 flex-1 px-3 py-2.5 text-left focus:outline-none focus:ring-2 focus:ring-inset focus:ring-accent/50"
-            >
-              <div className="flex items-center gap-2">
-                <StatusIndicator status={profile.status} />
-                <span className="truncate text-sm font-medium">{profile.name}</span>
-              </div>
-              <div className="ml-4 mt-1 flex items-center gap-2">
-                <span className="text-xs capitalize text-gray-500">{profile.platform}</span>
-                {profile.proxy && (
-                  <>
-                    <span className="text-xs text-gray-600">·</span>
-                    <span className="text-xs text-gray-500">Proxy</span>
-                  </>
-                )}
-              </div>
-              {profile.tags.length > 0 && (
-                <div className="ml-4 mt-1.5 flex flex-wrap gap-1">
-                  {profile.tags.map((t) => (
-                    <span
-                      key={t.tag}
-                      className="rounded-full border border-border bg-surface-4 px-1.5 py-0.5 text-[10px] text-gray-400"
-                      style={t.color ? { backgroundColor: `${t.color}18`, borderColor: `${t.color}55` } : undefined}
-                    >
-                      {t.tag}
-                    </span>
-                  ))}
+        <div role="rowgroup" className="p-2">
+          {filtered.map(({ profile, number }) => {
+            const proxy = getProxySummary(profile.proxy);
+
+            return (
+              <div
+                key={profile.id}
+                role="row"
+                className={`relative mb-1 grid grid-cols-[2.75rem_minmax(0,1fr)_minmax(8.75rem,0.9fr)_2.25rem] items-stretch rounded-md border transition-colors ${
+                  selectedId === profile.id
+                    ? "border-border-hover bg-surface-3"
+                    : "border-transparent hover:bg-surface-2"
+                }`}
+              >
+                <div
+                  role="cell"
+                  className="flex items-center justify-center border-r border-border/70 px-1 text-xs font-medium tabular-nums text-gray-500"
+                >
+                  {number}
                 </div>
-              )}
-            </button>
-            <div className="mr-1 mt-1.5">
-              <ProfileMenu
-                profile={profile}
-                open={openMenuId === profile.id}
-                copyStatus={copyResult?.id === profile.id ? copyResult.status : null}
-                cloning={cloningId === profile.id}
-                cloneFailed={cloneFailedId === profile.id}
-                onToggle={() => {
-                  setCopyResult(null);
-                  setCloneFailedId(null);
-                  setOpenMenuId((current) => current === profile.id ? null : profile.id);
-                }}
-                onClose={closeMenu}
-                onCopy={() => void handleCopy(profile)}
-                onClone={() => void handleClone(profile)}
-              />
-            </div>
-          </div>
-        ))}
+                <button
+                  type="button"
+                  onClick={() => onSelect(profile.id)}
+                  className="col-span-2 grid min-w-0 grid-cols-[minmax(0,1fr)_minmax(8.75rem,0.9fr)] text-left focus:outline-none focus:ring-2 focus:ring-inset focus:ring-accent/50"
+                  aria-label={`Select profile ${profile.name}`}
+                >
+                  <div role="cell" className="min-w-0 px-2 py-2.5">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <StatusIndicator status={profile.status} />
+                      <span className="truncate text-sm font-medium">{profile.name}</span>
+                    </div>
+                    <div className="ml-4 mt-1 flex items-center gap-2">
+                      <span className="text-xs capitalize text-gray-500">{profile.platform}</span>
+                    </div>
+                    {profile.tags.length > 0 && (
+                      <div className="ml-4 mt-1.5 flex flex-wrap gap-1">
+                        {profile.tags.map((t) => (
+                          <span
+                            key={t.tag}
+                            className="rounded-full border border-border bg-surface-4 px-1.5 py-0.5 text-[10px] text-gray-400"
+                            style={t.color ? { backgroundColor: `${t.color}18`, borderColor: `${t.color}55` } : undefined}
+                          >
+                            {t.tag}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <div role="cell" className="min-w-0 border-l border-border/70 px-2 py-2.5">
+                    <div
+                      className={`truncate text-xs font-medium ${profile.proxy ? "text-gray-300" : "text-gray-500"}`}
+                      title={profile.proxy ? `${proxy.scheme?.toLowerCase()}://${proxy.endpoint}` : "Direct connection"}
+                    >
+                      {proxy.endpoint}
+                    </div>
+                    {proxy.scheme && (
+                      <div className="mt-1.5 flex items-center">
+                        <span
+                          className="rounded border border-accent/20 bg-accent/10 px-1.5 py-0.5 text-[10px] font-medium uppercase text-accent"
+                        >
+                          {proxy.scheme}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </button>
+                <div role="cell" className="flex items-start justify-center pt-1.5">
+                  <ProfileMenu
+                    profile={profile}
+                    open={openMenuId === profile.id}
+                    copyStatus={copyResult?.id === profile.id ? copyResult.status : null}
+                    cloning={cloningId === profile.id}
+                    cloneFailed={cloneFailedId === profile.id}
+                    onToggle={() => {
+                      setCopyResult(null);
+                      setCloneFailedId(null);
+                      setOpenMenuId((current) => current === profile.id ? null : profile.id);
+                    }}
+                    onClose={closeMenu}
+                    onCopy={() => void handleCopy(profile)}
+                    onClone={() => void handleClone(profile)}
+                  />
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </div>
 
       <div className="sr-only" role="status" aria-live="polite">
