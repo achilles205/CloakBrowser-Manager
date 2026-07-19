@@ -300,13 +300,50 @@ def test_init_creates_bookmarks(tmp_path: Path):
     assert folder_names == {"Detection Tests", "Fingerprint", "Headers & TLS", "reCAPTCHA"}
 
 
-def test_init_creates_preferences(tmp_path: Path):
+def test_init_creates_google_search_preferences(tmp_path: Path):
     _init_profile_defaults(tmp_path)
     prefs_path = tmp_path / "Default" / "Preferences"
     assert prefs_path.exists()
     data = json.loads(prefs_path.read_text())
     assert "default_search_provider_data" in data
-    assert "DuckDuckGo" in data["default_search_provider_data"]["template_url_data"]["short_name"]
+    search = data["default_search_provider_data"]["template_url_data"]
+    assert search["short_name"] == "Google"
+    assert search["keyword"] == "google.com"
+    assert search["url"] == "https://www.google.com/search?q={searchTerms}"
+
+
+def test_init_preserves_existing_search_preferences(tmp_path: Path):
+    default_dir = tmp_path / "Default"
+    default_dir.mkdir(parents=True)
+    prefs_path = default_dir / "Preferences"
+    prefs_path.write_text(json.dumps({
+        "browser": {"show_home_button": True},
+        "default_search_provider_data": {
+            "template_url_data": {
+                "short_name": "DuckDuckGo",
+                "url": "https://duckduckgo.com/?q={searchTerms}",
+            },
+        },
+    }))
+
+    _init_profile_defaults(tmp_path)
+
+    data = json.loads(prefs_path.read_text())
+    assert data["browser"] == {"show_home_button": True}
+    assert data["default_search_provider_data"]["template_url_data"]["short_name"] == "DuckDuckGo"
+    assert "default_search_provider" not in data
+
+
+def test_init_does_not_overwrite_existing_malformed_preferences(tmp_path: Path):
+    default_dir = tmp_path / "Default"
+    default_dir.mkdir(parents=True)
+    prefs_path = default_dir / "Preferences"
+    prefs_path.write_text("not valid json")
+
+    _init_profile_defaults(tmp_path)
+
+    assert prefs_path.read_text() == "not valid json"
+    assert not (default_dir / "Preferences.manager.tmp").exists()
 
 
 def test_init_idempotent(tmp_path: Path):

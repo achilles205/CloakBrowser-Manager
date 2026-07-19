@@ -19,6 +19,24 @@ from .vnc_manager import VNCManager
 logger = logging.getLogger("cloakbrowser.manager.browser")
 
 
+GOOGLE_SEARCH_PROVIDER = {
+    "default_search_provider_data": {
+        "template_url_data": {
+            "keyword": "google.com",
+            "short_name": "Google",
+            "url": "https://www.google.com/search?q={searchTerms}",
+            "suggestions_url": (
+                "https://www.google.com/complete/search?client=chrome&q={searchTerms}"
+            ),
+            "favicon_url": "https://www.google.com/favicon.ico",
+        }
+    },
+    "default_search_provider": {
+        "enabled": True,
+    },
+}
+
+
 def _normalize_proxy(raw: str) -> str:
     """Convert common proxy formats to http://user:pass@host:port.
 
@@ -54,7 +72,7 @@ def _validate_proxy(url: str) -> None:
 
 
 def _init_profile_defaults(user_data_dir: Path) -> None:
-    """Set up bookmarks and DuckDuckGo search on first launch."""
+    """Set up bookmarks and Google search for a profile's first launch."""
     default_dir = user_data_dir / "Default"
     default_dir.mkdir(parents=True, exist_ok=True)
 
@@ -121,25 +139,16 @@ def _init_profile_defaults(user_data_dir: Path) -> None:
         bookmarks_path.write_text(json.dumps(bookmarks, indent=2))
         logger.info("Created default bookmarks for %s", user_data_dir.name)
 
-    # --- DuckDuckGo as default search engine ---
+    # --- Google as default search engine ---
+    # Chromium protects this preference after first launch via a MAC in
+    # "Secure Preferences". Only seed it for a fresh profile; modifying an
+    # existing profile offline would be rejected as search hijacking.
     prefs_path = default_dir / "Preferences"
     if not prefs_path.exists():
-        prefs = {
-            "default_search_provider_data": {
-                "template_url_data": {
-                    "keyword": "duckduckgo.com",
-                    "short_name": "DuckDuckGo",
-                    "url": "https://duckduckgo.com/?q={searchTerms}",
-                    "suggestions_url": "https://duckduckgo.com/ac/?q={searchTerms}&type=list",
-                    "favicon_url": "https://duckduckgo.com/favicon.ico",
-                }
-            },
-            "default_search_provider": {
-                "enabled": True,
-            },
-        }
-        prefs_path.write_text(json.dumps(prefs, indent=2))
-        logger.info("Set DuckDuckGo as default search for %s", user_data_dir.name)
+        temporary_path = prefs_path.with_name("Preferences.manager.tmp")
+        temporary_path.write_text(json.dumps(GOOGLE_SEARCH_PROVIDER, indent=2))
+        temporary_path.replace(prefs_path)
+        logger.info("Set Google as default search for %s", user_data_dir.name)
 
 
 BASE_CDP_PORT = 5100
