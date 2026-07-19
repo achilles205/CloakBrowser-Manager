@@ -19,22 +19,131 @@ from .vnc_manager import VNCManager
 logger = logging.getLogger("cloakbrowser.manager.browser")
 
 
-GOOGLE_SEARCH_PROVIDER = {
-    "default_search_provider_data": {
-        "template_url_data": {
-            "keyword": "google.com",
-            "short_name": "Google",
-            "url": "https://www.google.com/search?q={searchTerms}",
-            "suggestions_url": (
-                "https://www.google.com/complete/search?client=chrome&q={searchTerms}"
-            ),
-            "favicon_url": "https://www.google.com/favicon.ico",
+GOOGLE_SEARCH_MARKER = ".manager-google-search-v1"
+GOOGLE_SEARCH_URL = "https://www.google.com/search?q={searchTerms}"
+GOOGLE_SUGGEST_URL = (
+    "https://www.google.com/complete/search?client=chrome&q={searchTerms}"
+)
+
+# Configure the search provider through Chromium's Settings WebUI. Search
+# engines are persisted by TemplateURLService in both Preferences and the Web
+# Data database, so writing a partial Preferences file before launch is not
+# sufficient. Method arity is checked because CloakBrowser releases based on
+# older Chromium versions use the earlier 3/1-argument WebUI methods.
+_CONFIGURE_GOOGLE_SEARCH_SCRIPT = """
+async ({ searchUrl, suggestUrl }) => {
+    const settings = await import('chrome://settings/settings.js');
+    const proxy = settings.SearchEnginesBrowserProxyImpl.getInstance();
+    const flatten = info => [
+        ...(info.defaults || []),
+        ...(info.actives || []),
+        ...(info.others || []),
+        ...(info.extensions || []),
+    ];
+
+    let info = await proxy.getSearchEnginesList();
+    let google = flatten(info).find(engine =>
+        engine.keyword === 'google.com' ||
+        engine.url.includes('google.com/search')
+    );
+
+    if (!google) {
+        proxy.searchEngineEditStarted(-1);
+        await new Promise(resolve => setTimeout(resolve, 100));
+
+        if (proxy.searchEngineEditCompleted.length >= 4) {
+            proxy.searchEngineEditCompleted(
+                'Google', 'google.com', searchUrl, suggestUrl
+            );
+        } else {
+            proxy.searchEngineEditCompleted(
+                'Google', 'google.com', searchUrl
+            );
         }
-    },
-    "default_search_provider": {
-        "enabled": True,
-    },
+
+        for (let attempt = 0; attempt < 30 && !google; attempt++) {
+            await new Promise(resolve => setTimeout(resolve, 100));
+            info = await proxy.getSearchEnginesList();
+            google = flatten(info).find(engine =>
+                engine.keyword === 'google.com' ||
+                engine.url.includes('google.com/search')
+            );
+        }
+    }
+
+    if (!google) {
+        throw new Error('Chromium did not create the Google search engine');
+    }
+
+    if (!google.default) {
+        if (proxy.setDefaultSearchEngine.length >= 3) {
+            const location = settings.ChoiceMadeLocation
+                ? settings.ChoiceMadeLocation.SEARCH_ENGINE_SETTINGS
+                : 1;
+            proxy.setDefaultSearchEngine(google.modelIndex, location, false);
+        } else {
+            proxy.setDefaultSearchEngine(google.modelIndex);
+        }
+
+        for (let attempt = 0; attempt < 30 && !google.default; attempt++) {
+            await new Promise(resolve => setTimeout(resolve, 100));
+            info = await proxy.getSearchEnginesList();
+            google = flatten(info).find(engine => engine.id === google.id);
+        }
+    }
+
+    if (!google || !google.default) {
+        throw new Error('Chromium did not set Google as the default search engine');
+    }
+
+    return { id: google.id, name: google.name, default: google.default };
 }
+"""
+
+
+async def _ensure_google_default_search(context: Any, user_data_dir: Path) -> bool:
+    """Set Google once through Chromium, without overriding later user choices."""
+    marker_path = user_data_dir / GOOGLE_SEARCH_MARKER
+    if marker_path.exists():
+        return True
+
+    settings_page = None
+    try:
+        settings_page = await context.new_page()
+        await settings_page.goto(
+            "chrome://settings/searchEngines",
+            wait_until="domcontentloaded",
+            timeout=10_000,
+        )
+        result = await settings_page.evaluate(
+            _CONFIGURE_GOOGLE_SEARCH_SCRIPT,
+            {
+                "searchUrl": GOOGLE_SEARCH_URL,
+                "suggestUrl": GOOGLE_SUGGEST_URL,
+            },
+        )
+        if not result or not result.get("default"):
+            raise RuntimeError("Chromium did not confirm Google as default")
+
+        marker_path.write_text("Google default search configured\n", encoding="utf-8")
+        logger.info("Set Google as default search for %s", user_data_dir.name)
+        return True
+    except Exception as exc:
+        # Search setup should never prevent a profile from launching. Without a
+        # marker, the Manager will retry on the next launch.
+        logger.warning(
+            "Could not set Google as default search for %s: %s",
+            user_data_dir.name,
+            exc,
+        )
+        return False
+    finally:
+        if settings_page is not None:
+            try:
+                if not settings_page.is_closed():
+                    await settings_page.close()
+            except Exception as exc:
+                logger.debug("Could not close search settings page: %s", exc)
 
 
 def _normalize_proxy(raw: str) -> str:
@@ -72,7 +181,7 @@ def _validate_proxy(url: str) -> None:
 
 
 def _init_profile_defaults(user_data_dir: Path) -> None:
-    """Set up bookmarks and Google search for a profile's first launch."""
+    """Set up bookmarks for a profile's first launch."""
     default_dir = user_data_dir / "Default"
     default_dir.mkdir(parents=True, exist_ok=True)
 
@@ -138,18 +247,6 @@ def _init_profile_defaults(user_data_dir: Path) -> None:
         }
         bookmarks_path.write_text(json.dumps(bookmarks, indent=2))
         logger.info("Created default bookmarks for %s", user_data_dir.name)
-
-    # --- Google as default search engine ---
-    # Chromium protects this preference after first launch via a MAC in
-    # "Secure Preferences". Only seed it for a fresh profile; modifying an
-    # existing profile offline would be rejected as search hijacking.
-    prefs_path = default_dir / "Preferences"
-    if not prefs_path.exists():
-        temporary_path = prefs_path.with_name("Preferences.manager.tmp")
-        temporary_path.write_text(json.dumps(GOOGLE_SEARCH_PROVIDER, indent=2))
-        temporary_path.replace(prefs_path)
-        logger.info("Set Google as default search for %s", user_data_dir.name)
-
 
 BASE_CDP_PORT = 5100
 CDP_PORT_RANGE = 100  # cycle through 5100-5199 to avoid TIME_WAIT collisions
@@ -262,6 +359,11 @@ class BrowserManager:
             # Native mode deliberately omits DISPLAY so Windows opens a normal,
             # interactive browser window on the user's desktop.
             context = await launch_persistent_context_async(**launch_options)
+
+            # Use Chromium's own TemplateURLService through Settings WebUI so
+            # both new and existing profiles get a valid Google provider. A
+            # per-profile marker prevents overriding later user changes.
+            await _ensure_google_default_search(context, user_data_dir)
 
             # Inject clipboard listener: captures copied text on every page
             # so the GET /clipboard endpoint can read it via page.evaluate()

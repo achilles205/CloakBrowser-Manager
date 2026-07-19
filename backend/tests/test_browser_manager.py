@@ -13,6 +13,10 @@ import socket
 from backend.browser_manager import (
     BASE_CDP_PORT,
     CDP_PORT_RANGE,
+    GOOGLE_SEARCH_MARKER,
+    GOOGLE_SEARCH_URL,
+    GOOGLE_SUGGEST_URL,
+    _ensure_google_default_search,
     _init_profile_defaults,
     _normalize_proxy,
     _validate_proxy,
@@ -156,7 +160,9 @@ async def test_native_launch_skips_vnc_and_display_env(tmp_path: Path, monkeypat
     context.pages = []
     context.on = MagicMock()
     launch = AsyncMock(return_value=context)
+    configure_search = AsyncMock(return_value=True)
     monkeypatch.setattr("backend.browser_manager.launch_persistent_context_async", launch)
+    monkeypatch.setattr("backend.browser_manager._ensure_google_default_search", configure_search)
 
     mgr = BrowserManager(view_mode="native")
     mgr.vnc.allocate = AsyncMock(side_effect=AssertionError("VNC must not be allocated"))
@@ -172,6 +178,7 @@ async def test_native_launch_skips_vnc_and_display_env(tmp_path: Path, monkeypat
     assert "env" not in launch.await_args.kwargs
     assert "--use-angle=swiftshader" not in launch.await_args.kwargs["args"]
     assert mgr.get_status("native-profile")["view_mode"] == "native"
+    configure_search.assert_awaited_once_with(context, tmp_path)
 
 
 @pytest.mark.parametrize("scheme", ["http", "https", "socks5"])
@@ -186,7 +193,9 @@ async def test_native_launch_passes_authenticated_proxy(
     context.pages = []
     context.on = MagicMock()
     launch = AsyncMock(return_value=context)
+    configure_search = AsyncMock(return_value=True)
     monkeypatch.setattr("backend.browser_manager.launch_persistent_context_async", launch)
+    monkeypatch.setattr("backend.browser_manager._ensure_google_default_search", configure_search)
 
     proxy = f"{scheme}://proxy-user:proxy-pass@192.0.2.10:6238"
     mgr = BrowserManager(view_mode="native")
@@ -237,30 +246,56 @@ def test_launch_args_none_no_effect():
 # ── _allocate_cdp_port ───────────────────────────────────────────────────────
 
 
-def test_allocate_cdp_port_returns_free_port():
+class _PortTestSocket:
+    """Small socket double so CDP allocation tests ignore live Manager ports."""
+
+    def __init__(self, occupied: set[int]):
+        self.occupied = occupied
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return False
+
+    def bind(self, address):
+        if address[1] in self.occupied:
+            raise OSError("port occupied")
+
+
+def _mock_cdp_ports(monkeypatch, occupied: set[int] | None = None):
+    occupied = occupied or set()
+    monkeypatch.setattr(
+        socket,
+        "socket",
+        lambda *_args, **_kwargs: _PortTestSocket(occupied),
+    )
+
+
+def test_allocate_cdp_port_returns_free_port(monkeypatch):
+    _mock_cdp_ports(monkeypatch)
     mgr = BrowserManager()
     port = mgr._allocate_cdp_port()
     assert BASE_CDP_PORT <= port < BASE_CDP_PORT + CDP_PORT_RANGE
 
 
-def test_allocate_cdp_port_skips_occupied():
+def test_allocate_cdp_port_skips_occupied(monkeypatch):
+    _mock_cdp_ports(monkeypatch, {BASE_CDP_PORT})
     mgr = BrowserManager()
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as blocker:
-        blocker.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        blocker.bind(("127.0.0.1", BASE_CDP_PORT))
-        blocker.listen(1)
-        port = mgr._allocate_cdp_port()
-        assert port == BASE_CDP_PORT + 1
+    port = mgr._allocate_cdp_port()
+    assert port == BASE_CDP_PORT + 1
 
 
-def test_allocate_cdp_port_advances_counter():
+def test_allocate_cdp_port_advances_counter(monkeypatch):
+    _mock_cdp_ports(monkeypatch)
     mgr = BrowserManager()
     p1 = mgr._allocate_cdp_port()
     p2 = mgr._allocate_cdp_port()
     assert p2 == p1 + 1
 
 
-def test_allocate_cdp_port_wraps_around():
+def test_allocate_cdp_port_wraps_around(monkeypatch):
+    _mock_cdp_ports(monkeypatch)
     mgr = BrowserManager()
     mgr._next_cdp_port = BASE_CDP_PORT + CDP_PORT_RANGE - 1
     p1 = mgr._allocate_cdp_port()
@@ -269,24 +304,17 @@ def test_allocate_cdp_port_wraps_around():
     assert p2 == BASE_CDP_PORT
 
 
-def test_allocate_cdp_port_all_occupied_raises():
+def test_allocate_cdp_port_all_occupied_raises(monkeypatch):
+    _mock_cdp_ports(
+        monkeypatch,
+        {BASE_CDP_PORT + offset for offset in range(CDP_PORT_RANGE)},
+    )
     mgr = BrowserManager()
-    blockers = []
-    try:
-        for i in range(CDP_PORT_RANGE):
-            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            s.bind(("127.0.0.1", BASE_CDP_PORT + i))
-            s.listen(1)
-            blockers.append(s)
-        with pytest.raises(ValueError, match="No free CDP ports"):
-            mgr._allocate_cdp_port()
-    finally:
-        for s in blockers:
-            s.close()
+    with pytest.raises(ValueError, match="No free CDP ports"):
+        mgr._allocate_cdp_port()
 
 
-# ── _init_profile_defaults ───────────────────────────────────────────────────
+# ── profile defaults ─────────────────────────────────────────────────────────
 
 
 def test_init_creates_bookmarks(tmp_path: Path):
@@ -300,19 +328,13 @@ def test_init_creates_bookmarks(tmp_path: Path):
     assert folder_names == {"Detection Tests", "Fingerprint", "Headers & TLS", "reCAPTCHA"}
 
 
-def test_init_creates_google_search_preferences(tmp_path: Path):
+def test_init_does_not_seed_partial_search_preferences(tmp_path: Path):
     _init_profile_defaults(tmp_path)
     prefs_path = tmp_path / "Default" / "Preferences"
-    assert prefs_path.exists()
-    data = json.loads(prefs_path.read_text())
-    assert "default_search_provider_data" in data
-    search = data["default_search_provider_data"]["template_url_data"]
-    assert search["short_name"] == "Google"
-    assert search["keyword"] == "google.com"
-    assert search["url"] == "https://www.google.com/search?q={searchTerms}"
+    assert not prefs_path.exists()
 
 
-def test_init_preserves_existing_search_preferences(tmp_path: Path):
+def test_init_preserves_existing_preferences(tmp_path: Path):
     default_dir = tmp_path / "Default"
     default_dir.mkdir(parents=True)
     prefs_path = default_dir / "Preferences"
@@ -344,6 +366,55 @@ def test_init_does_not_overwrite_existing_malformed_preferences(tmp_path: Path):
 
     assert prefs_path.read_text() == "not valid json"
     assert not (default_dir / "Preferences.manager.tmp").exists()
+
+
+@pytest.mark.asyncio
+async def test_ensure_google_configures_once_and_writes_marker(tmp_path: Path):
+    page = MagicMock()
+    page.goto = AsyncMock()
+    page.evaluate = AsyncMock(return_value={"id": 13, "name": "Google", "default": True})
+    page.is_closed.return_value = False
+    page.close = AsyncMock()
+    context = MagicMock()
+    context.new_page = AsyncMock(return_value=page)
+
+    assert await _ensure_google_default_search(context, tmp_path) is True
+
+    page.goto.assert_awaited_once_with(
+        "chrome://settings/searchEngines",
+        wait_until="domcontentloaded",
+        timeout=10_000,
+    )
+    script, options = page.evaluate.await_args.args
+    assert "searchEngineEditCompleted.length >= 4" in script
+    assert "setDefaultSearchEngine.length >= 3" in script
+    assert options == {
+        "searchUrl": GOOGLE_SEARCH_URL,
+        "suggestUrl": GOOGLE_SUGGEST_URL,
+    }
+    page.close.assert_awaited_once()
+    assert (tmp_path / GOOGLE_SEARCH_MARKER).exists()
+
+    second_context = MagicMock()
+    second_context.new_page = AsyncMock()
+    assert await _ensure_google_default_search(second_context, tmp_path) is True
+    second_context.new_page.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_ensure_google_failure_retries_on_next_launch(tmp_path: Path):
+    page = MagicMock()
+    page.goto = AsyncMock()
+    page.evaluate = AsyncMock(side_effect=RuntimeError("WebUI unavailable"))
+    page.is_closed.return_value = False
+    page.close = AsyncMock()
+    context = MagicMock()
+    context.new_page = AsyncMock(return_value=page)
+
+    assert await _ensure_google_default_search(context, tmp_path) is False
+
+    assert not (tmp_path / GOOGLE_SEARCH_MARKER).exists()
+    page.close.assert_awaited_once()
 
 
 def test_init_idempotent(tmp_path: Path):
